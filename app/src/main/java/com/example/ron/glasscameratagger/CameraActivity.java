@@ -2,12 +2,15 @@ package com.example.ron.glasscameratagger;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.PixelFormat;
 import android.hardware.Camera;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.text.Html;
 import android.util.Log;
 import android.view.Gravity;
@@ -16,6 +19,7 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.Toast;
@@ -52,6 +56,7 @@ public class CameraActivity extends Activity /*implements View.OnClickListener*/
 
     private boolean mSafeToTakePicture;
     private List<CardBuilder> cards;
+    private List<String> cardText;
     private LinearLayout frame_layout;
     private SurfaceView surface_view;
     private CardScrollView scroll_view;
@@ -60,6 +65,7 @@ public class CameraActivity extends Activity /*implements View.OnClickListener*/
     private GestureDetector mGestureDetector;
     SurfaceHolder surface_holder = null;
     SurfaceHolder.Callback sh_callback = null;
+    private String selectedTerm = null;
 
     private final ClarifaiClient client = new ClarifaiClient(Credentials.CLIENT_ID,
             Credentials.CLIENT_SECRET);
@@ -85,6 +91,7 @@ public class CameraActivity extends Activity /*implements View.OnClickListener*/
         surface_holder.addCallback(sh_callback);
 
         cards = new ArrayList<>();
+        cardText = new ArrayList<>();
 
         scroll_view = new CardScrollView(getApplicationContext());
         scroll_view.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
@@ -92,6 +99,17 @@ public class CameraActivity extends Activity /*implements View.OnClickListener*/
         sv_adapter = new ClarifaiCardScrollAdapter();
         scroll_view.setAdapter(sv_adapter);
         scroll_view.activate();
+        scroll_view.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> adapterView, View view, int i, long l) {
+                selectedTerm = cardText.get(i);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> adapterView) {
+                selectedTerm = null;
+            }
+        });
 
         FrameLayout.LayoutParams params1 = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
@@ -181,6 +199,14 @@ public class CameraActivity extends Activity /*implements View.OnClickListener*/
                 } else if (gesture == Gesture.SWIPE_LEFT) {
                     // do something on left (backwards) swipe
                     return true;
+                } else if (gesture == Gesture.LONG_PRESS) {
+                    // do something on long press
+                    if (selectedTerm != null) {
+                        Intent browse = new Intent(Intent.ACTION_VIEW, Uri.parse(
+                                "http://www.google.com/search?q=" + selectedTerm
+                        ));
+                        startActivity(browse);
+                    }
                 }
                 return false;
             }
@@ -263,10 +289,12 @@ public class CameraActivity extends Activity /*implements View.OnClickListener*/
             if (result.getStatusCode() == RecognitionResult.StatusCode.OK) {
                 // Display the list of tags in the UI.
                 cards.clear();
+                cardText.clear();
                 for (Tag tag : result.getTags()) {
                     cards.add(new CardBuilder(getApplicationContext(), CardBuilder.Layout.TEXT)
                             .setText("") /* <-- this will be clipped off the screen */
                             .setFootnote(tag.getName() + "   (swing arm to shop)"));
+                    cardText.add(tag.getName());
                     Log.d(TAG, tag.getName());
                 }
                 sv_adapter.notifyDataSetChanged();
