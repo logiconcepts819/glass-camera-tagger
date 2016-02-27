@@ -1,4 +1,4 @@
-package me.ronwright.cameratagger;
+package com.example.ron.glasscameratagger;
 
 class Credentials {
   // IMPORTANT NOTE: you should replace the CLIENT_ID and CLIENT_SECRET values below

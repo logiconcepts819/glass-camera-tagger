@@ -1,7 +1,7 @@
 package com.example.ron.glasscameratagger;
 
-import android.app.ActionBar;
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.PixelFormat;
@@ -9,18 +9,15 @@ import android.hardware.Camera;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.text.Html;
-import android.text.method.LinkMovementMethod;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ListView;
-import android.widget.ScrollView;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import com.clarifai.api.ClarifaiClient;
@@ -31,6 +28,8 @@ import com.clarifai.api.exception.ClarifaiException;
 import com.google.android.glass.widget.CardBuilder;
 import com.google.android.glass.widget.CardScrollAdapter;
 import com.google.android.glass.widget.CardScrollView;
+import com.google.android.glass.touchpad.Gesture;
+import com.google.android.glass.touchpad.GestureDetector;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -47,16 +46,18 @@ import java.util.List;
  *
  * @see <a href="https://developers.google.com/glass/develop/gdk/touch">GDK Developer Guide</a>
  */
-public class CameraActivity extends Activity implements View.OnClickListener {
+public class CameraActivity extends Activity /*implements View.OnClickListener*/ {
 
     private static final String TAG = "CameraActivity";
 
+    private boolean mSafeToTakePicture;
     private List<CardBuilder> cards;
     private LinearLayout frame_layout;
     private SurfaceView surface_view;
     private CardScrollView scroll_view;
     private ClarifaiCardScrollAdapter sv_adapter;
     private Camera mCamera;
+    private GestureDetector mGestureDetector;
     SurfaceHolder surface_holder = null;
     SurfaceHolder.Callback sh_callback = null;
 
@@ -69,13 +70,13 @@ public class CameraActivity extends Activity implements View.OnClickListener {
 
         getWindow().setFormat(PixelFormat.TRANSLUCENT);
 
+        mSafeToTakePicture = false;
+
         frame_layout = new LinearLayout(getApplicationContext());
 
         surface_view = new SurfaceView(getApplicationContext());
-        surface_view.setOnClickListener(this);
-        surface_view.setFocusable(true);
-        surface_view.setFocusableInTouchMode(true);
-
+        surface_view.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
         if (surface_holder == null) {
             surface_holder = surface_view.getHolder();
         }
@@ -86,26 +87,47 @@ public class CameraActivity extends Activity implements View.OnClickListener {
         cards = new ArrayList<>();
 
         scroll_view = new CardScrollView(getApplicationContext());
-        scroll_view.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 120));
+        scroll_view.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                120));
         sv_adapter = new ClarifaiCardScrollAdapter();
         scroll_view.setAdapter(sv_adapter);
         scroll_view.activate();
 
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams params1 = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        params.gravity = Gravity.CENTER_VERTICAL;
-        frame_layout.setOrientation(LinearLayout.VERTICAL);
-        frame_layout.addView(surface_view, params);
-        frame_layout.addView(scroll_view, params);
+        FrameLayout.LayoutParams params2 = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, 80);
 
-        addContentView(frame_layout, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        params1.gravity = Gravity.CENTER_VERTICAL;
+
+        frame_layout.setOrientation(LinearLayout.VERTICAL);
+        frame_layout.addView(scroll_view, params2);
+        frame_layout.addView(surface_view, params1);
+
+        addContentView(frame_layout, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        mGestureDetector = createGestureDetector(getApplicationContext());
+    }
+
+    /*
+     * Send generic motion events to the gesture detector
+     */
+    @Override
+    public boolean onGenericMotionEvent(MotionEvent event) {
+        if (mGestureDetector != null) {
+            return mGestureDetector.onMotionEvent(event);
+        }
+        return false;
     }
 
     SurfaceHolder.Callback my_callback() {
         return new SurfaceHolder.Callback() {
 
+            private byte[] cb_buffer = new byte[1048576];
+
             @Override
             public void surfaceDestroyed(SurfaceHolder holder) {
+                mSafeToTakePicture = false;
                 mCamera.stopPreview();
                 mCamera.release();
                 mCamera = null;
@@ -127,14 +149,56 @@ public class CameraActivity extends Activity implements View.OnClickListener {
             public void surfaceChanged(SurfaceHolder holder, int format, int width,
                                        int height) {
                 mCamera.startPreview();
+                mSafeToTakePicture = true;
             }
         };
     }
 
-    @Override
-    public void onClick(View v) {
-        // perform desired action
-        mCamera.takePicture(shutterCallback, rawCallback, jpegCallback);
+    private GestureDetector createGestureDetector(Context context) {
+        GestureDetector gestureDetector = new GestureDetector(context);
+        //Create a base listener for generic gestures
+        gestureDetector.setBaseListener( new GestureDetector.BaseListener() {
+            @Override
+            public boolean onGesture(Gesture gesture) {
+                if (gesture == Gesture.TAP) {
+                    // do something on tap
+                    Log.v(TAG, "tap");
+                    //if (readyForMenu) {
+                    //openOptionsMenu();
+                    //}
+                    if (mSafeToTakePicture) {
+                        mCamera.takePicture(shutterCallback, rawCallback, jpegCallback);
+                    } else {
+                        Log.w(TAG, "camera preview not set up yet");
+                    }
+                    return true;
+                } else if (gesture == Gesture.TWO_TAP) {
+                    // do something on two finger tap
+                    return true;
+                } else if (gesture == Gesture.SWIPE_RIGHT) {
+                    // do something on right (forward) swipe
+                    return true;
+                } else if (gesture == Gesture.SWIPE_LEFT) {
+                    // do something on left (backwards) swipe
+                    return true;
+                }
+                return false;
+            }
+        });
+        gestureDetector.setFingerListener(new GestureDetector.FingerListener() {
+            @Override
+            public void onFingerCountChanged(int previousCount, int currentCount) {
+                // do something on finger count changes
+            }
+        });
+        gestureDetector.setScrollListener(new GestureDetector.ScrollListener() {
+            @Override
+            public boolean onScroll(float displacement, float delta, float velocity) {
+                // do something on scrolling
+                return false;
+            }
+        });
+        return gestureDetector;
     }
 
     Camera.ShutterCallback shutterCallback = new Camera.ShutterCallback() {
@@ -148,25 +212,27 @@ public class CameraActivity extends Activity implements View.OnClickListener {
     Camera.PictureCallback rawCallback = new Camera.PictureCallback() {
         public void onPictureTaken(byte[] data, Camera camera) {
             // TODO Auto-generated method stub
-
-            // Log.e(TAG+" onPictureTaken()", "Raw data is:------------- "
-            // + data.length + " -----------");
-            Bitmap bmp = BitmapFactory.decodeByteArray(data, 0, data.length);
-            new AsyncTask<Bitmap, Void, RecognitionResult>() {
-                @Override protected RecognitionResult doInBackground(Bitmap... bitmaps) {
-                    return recognizeBitmap(bitmaps[0]);
-                }
-                @Override protected void onPostExecute(RecognitionResult result) {
-                    updateUIForResult(result);
-                }
-            }.execute(bmp);
         }
     };
     Camera.PictureCallback jpegCallback = new Camera.PictureCallback() {
         public void onPictureTaken(byte[] data, Camera camera) {
             // TODO Auto-generated method stub
-            // Log.e("JpegCallBack", new String(data));
-//			JpegImage.setImageBytes(data);
+            if (data != null) {
+                Bitmap bmp = BitmapFactory.decodeByteArray(data, 0, data.length);
+                new AsyncTask<Bitmap, Void, RecognitionResult>() {
+                    @Override
+                    protected RecognitionResult doInBackground(Bitmap... bitmaps) {
+                        return recognizeBitmap(bitmaps[0]);
+                    }
+
+                    @Override
+                    protected void onPostExecute(RecognitionResult result) {
+                        updateUIForResult(result);
+                    }
+                }.execute(bmp);
+            } else {
+                Log.w(TAG, "did not receive picture");
+            }
         }
     };
 
@@ -199,10 +265,11 @@ public class CameraActivity extends Activity implements View.OnClickListener {
                 cards.clear();
                 for (Tag tag : result.getTags()) {
                     cards.add(new CardBuilder(getApplicationContext(), CardBuilder.Layout.TEXT)
-                            .setText(Html.fromHtml("<a href=\"http://www.google.com/search?q="
-                            + tag.getName() + "\">" + tag.getName() + "</a>"))
-                            .setFootnote("Click here to open search"));
+                            .setText("") /* <-- this will be clipped off the screen */
+                            .setFootnote(tag.getName() + "   (swing arm to shop)"));
+                    Log.d(TAG, tag.getName());
                 }
+                sv_adapter.notifyDataSetChanged();
             } else {
                 Log.e(TAG, "Clarifai: " + result.getStatusMessage());
             }
