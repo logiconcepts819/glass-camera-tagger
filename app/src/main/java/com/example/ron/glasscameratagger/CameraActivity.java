@@ -37,6 +37,8 @@ import com.google.android.glass.touchpad.GestureDetector;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -202,10 +204,15 @@ public class CameraActivity extends Activity /*implements View.OnClickListener*/
                 } else if (gesture == Gesture.LONG_PRESS) {
                     // do something on long press
                     if (selectedTerm != null) {
-                        Intent browse = new Intent(Intent.ACTION_VIEW, Uri.parse(
-                                "http://www.google.com/search?q=" + selectedTerm
-                        ));
-                        startActivity(browse);
+                        try {
+                            Intent browse = new Intent(Intent.ACTION_VIEW, Uri.parse(
+                                    "http://www.amazon.com/s/?field-keywords=" +
+                                            URLEncoder.encode(selectedTerm, "utf-8")
+                            ));
+                            startActivity(browse);
+                        } catch (UnsupportedEncodingException e) {
+                            e.printStackTrace();
+                        }
                     }
                 }
                 return false;
