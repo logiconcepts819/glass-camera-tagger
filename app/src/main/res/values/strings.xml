@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">GlassCameraTagger</string>
+    <string name="title_activity_camera">Camera Immersion</string>
+    <string name="hello_world">Hello world!</string>
+</resources>
